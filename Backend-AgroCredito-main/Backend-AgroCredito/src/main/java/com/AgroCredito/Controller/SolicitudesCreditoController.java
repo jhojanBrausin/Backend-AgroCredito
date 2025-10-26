@@ -19,11 +19,14 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.AgroCredito.Dto.Request.ActualizarReferenciaDTO;
 import com.AgroCredito.Dto.Request.ActualizarSolicitudDTO;
+import com.AgroCredito.Dto.Request.AgregarReferenciaDTO;
 import com.AgroCredito.Dto.Request.CrearSolicitudDTO;
 import com.AgroCredito.Dto.Request.ProyectoProductivoDTO;
 import com.AgroCredito.Model.Solicitudes_Credito;
 import com.AgroCredito.Model.Solicitudes_Credito.ProyectoProductivo;
+import com.AgroCredito.Model.Usuario;
 import com.AgroCredito.Service.SolicitudesCreditoService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.mongodb.client.gridfs.model.GridFSFile;
@@ -356,6 +359,122 @@ public class SolicitudesCreditoController {
                     "solicitud", actualizada
             ));
 
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+    
+    
+ // ============================================
+    // ENDPOINTS PARA REFERENCIAS COMUNITARIAS
+    // ============================================
+    
+    /**
+     * Agregar nueva referencia comunitaria
+     * 
+     * POST /api/solicitudes/referencias
+     * Headers: Authorization: Bearer {token}
+     * Body: JSON con datos de la referencia
+     */
+    @PostMapping("/referencias")
+    public ResponseEntity<?> agregarReferencia(
+            @RequestBody @Valid AgregarReferenciaDTO dto,
+            Authentication authentication) {
+        
+        try {
+            String correoUsuario = authentication.getName();
+            Usuario.ReferenciaComunitaria referencia = solicitudService.agregarReferencia(correoUsuario, dto);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("mensaje", "Referencia comunitaria agregada exitosamente");
+            response.put("referencia", referencia);
+            
+            return ResponseEntity.status(HttpStatus.CREATED).body(response);
+            
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Obtener todas las referencias del usuario
+     * 
+     * GET /api/solicitudes/referencias
+     * Headers: Authorization: Bearer {token}
+     */
+    @GetMapping("/referencias")
+    public ResponseEntity<?> obtenerReferencias(Authentication authentication) {
+        
+        try {
+            String correoUsuario = authentication.getName();
+            List<Usuario.ReferenciaComunitaria> referencias = solicitudService.obtenerReferencias(correoUsuario);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("referencias", referencias);
+            response.put("total", referencias.size());
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Actualizar referencia comunitaria
+     * 
+     * PUT /api/solicitudes/referencias/:indice
+     * Headers: Authorization: Bearer {token}
+     * Body: JSON con campos a actualizar
+     * 
+     * El índice empieza en 0 (primera referencia = 0, segunda = 1, etc.)
+     */
+    @PutMapping("/referencias/{indice}")
+    public ResponseEntity<?> actualizarReferencia(
+            @PathVariable int indice,
+            @RequestBody @Valid ActualizarReferenciaDTO dto,
+            Authentication authentication) {
+        
+        try {
+            String correoUsuario = authentication.getName();
+            Usuario.ReferenciaComunitaria referencia = solicitudService.actualizarReferencia(
+                    correoUsuario, indice, dto);
+            
+            Map<String, Object> response = new HashMap<>();
+            response.put("mensaje", "Referencia actualizada exitosamente");
+            response.put("referencia", referencia);
+            response.put("indice", indice);
+            
+            return ResponseEntity.ok(response);
+            
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST)
+                    .body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * Eliminar referencia comunitaria
+     * 
+     * DELETE /api/solicitudes/referencias/:indice
+     * Headers: Authorization: Bearer {token}
+     * 
+     * El índice empieza en 0 (primera referencia = 0, segunda = 1, etc.)
+     */
+    @DeleteMapping("/referencias/{indice}")
+    public ResponseEntity<?> eliminarReferencia(
+            @PathVariable int indice,
+            Authentication authentication) {
+        
+        try {
+            String correoUsuario = authentication.getName();
+            solicitudService.eliminarReferencia(correoUsuario, indice);
+            
+            return ResponseEntity.ok(Map.of("mensaje", "Referencia eliminada exitosamente"));
+            
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(Map.of("error", e.getMessage()));

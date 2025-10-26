@@ -6,6 +6,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
 @Data
@@ -21,7 +22,12 @@ public class Credito {
     @Field("id_usuario")
     private String idUsuario;
     
-    private UsuarioSnapshot usuario;
+    @Field("usuario_embedido")
+    private UsuarioEmbedido usuarioEmbedido;
+    
+    @Field("solicitud_embedida")
+    private SolicitudEmbedida solicitudEmbedida;
+    
     private Aprobador aprobador;
     
     @Field("monto_aprobado")
@@ -40,9 +46,9 @@ public class Credito {
     private LocalDateTime fechaAprobacion;
     
     @Field("fecha_vencimiento")
-    private LocalDateTime fechaVencimiento;
+    private Date fechaVencimiento;
     
-    private String estado; 
+    private String estado; // "activo", "pagado", "vencido", "cancelado"
     
     @Field("saldo_pendiente")
     private Double saldoPendiente;
@@ -51,22 +57,92 @@ public class Credito {
     private Double totalPagado;
     
     @Field("historial_pagos")
-    private List<Pago> historialPagos = new ArrayList<>();
+    private List<HistorialPago> historialPagos = new ArrayList<>();
     
     @Field("evidencias_cultivo")
     private List<EvidenciaCultivo> evidenciasCultivo = new ArrayList<>();
     
     private Metricas metricas;
     
+    // ==========================================
+    // CLASES INTERNAS
+    // ==========================================
     
+    /**
+     * Usuario Embedido
+     */
     @Data
-    public static class UsuarioSnapshot {
+    public static class UsuarioEmbedido {
         private String nombres;
         private String identificacion;
         private String telefono;
+        private String correo;
+        private String rol;
+        
+        @Field("ubicacion_principal")
+        private UbicacionPrincipal ubicacionPrincipal;
+        
+        @Field("actividad_economica")
+        private String actividadEconomica;
+        
+        @Field("ingresos_aprox")
+        private Double ingresosAprox;
+        
+        @Field("historial_crediticio_resumen")
+        private String historialCrediticioResumen;
     }
     
+    /**
+     * Ubicación Principal
+     */
+    @Data
+    public static class UbicacionPrincipal {
+        private String departamento;
+        private String municipio;
+        private String vereda;
+    }
     
+    /**
+     * Solicitud Embedida
+     */
+    @Data
+    public static class SolicitudEmbedida {
+        @Field("fecha_solicitud")
+        private Date fechaSolicitud;
+        
+        @Field("monto_solicitado")
+        private Double montoSolicitado;
+        
+        @Field("destino_credito")
+        private String destinoCredito;
+        
+        @Field("plazo_meses_solicitado")
+        private Integer plazoMesesSolicitado;
+        
+        private String garantia;
+        
+        @Field("puntaje_evaluacion")
+        private Integer puntajeEvaluacion;
+        
+        @Field("proyecto_productivo_resumen")
+        private ProyectoProductivoResumen proyectoProductivoResumen;
+    }
+    
+    /**
+     * Resumen del Proyecto Productivo
+     */
+    @Data
+    public static class ProyectoProductivoResumen {
+        private String nombre;
+        private String descripcion;
+        
+        @Field("duracion_meses")
+        private Integer duracionMeses;
+    }
+    
+    /**
+     * Aprobador del Crédito
+     */
     @Data
     public static class Aprobador {
         private String id;
@@ -74,14 +150,16 @@ public class Credito {
         private String rol;
     }
     
-    
+    /**
+     * Historial de Pago
+     */
     @Data
-    public static class Pago {
+    public static class HistorialPago {
         @Id
         private String id;
         
         @Field("fecha_pago")
-        private LocalDateTime fechaPago;
+        private Date fechaPago;
         
         private Double monto;
         
@@ -89,9 +167,9 @@ public class Credito {
         private String metodoPago;
         
         @Field("comprobante_file")
-        private ComprobanteReferencia comprobanteFile;
+        private ComprobanteFile comprobanteFile;
         
-        private String estado; 
+        private String estado; // "pendiente", "confirmado", "rechazado"
         
         @Field("interes_pagado")
         private Double interesPagado;
@@ -101,43 +179,53 @@ public class Credito {
         
         @Field("saldo_restante")
         private Double saldoRestante;
-        
-        @Data
-        public static class ComprobanteReferencia {
-            @Field("file_id")
-            private String fileId;
-            
-            private String filename;
-            
-            @Field("contentType")
-            private String contentType;
-        }
     }
     
+    /**
+     * Comprobante de Pago
+     */
+    @Data
+    public static class ComprobanteFile {
+        @Field("file_id")
+        private String fileId;
+        
+        private String filename;
+        
+        @Field("contentType")
+        private String contentType;
+    }
     
+    /**
+     * Evidencias del Cultivo
+     */
     @Data
     public static class EvidenciaCultivo {
         @Field("tipo_cultivo")
         private String tipoCultivo;
         
-        private List<ImagenEvidencia> imagenes = new ArrayList<>();
-        
-        @Data
-        public static class ImagenEvidencia {
-            @Field("file_id")
-            private String fileId;
-            
-            private String filename;
-            
-            @Field("contentType")
-            private String contentType;
-            
-            private String descripcion;
-            private LocalDateTime fecha;
-        }
+        private List<ImagenCultivo> imagenes = new ArrayList<>();
     }
     
+    /**
+     * Imagen del Cultivo
+     */
+    @Data
+    public static class ImagenCultivo {
+        @Field("file_id")
+        private String fileId;
+        
+        private String filename;
+        
+        @Field("contentType")
+        private String contentType;
+        
+        private String descripcion;
+        private Date fecha;
+    }
     
+    /**
+     * Métricas del Crédito
+     */
     @Data
     public static class Metricas {
         @Field("pagos_realizados")

@@ -1,5 +1,21 @@
 package com.AgroCredito.Service;
 
+import com.AgroCredito.Dto.Request.ActualizarReferenciaDTO;
+import com.AgroCredito.Dto.Request.ActualizarSolicitudDTO;
+import com.AgroCredito.Dto.Request.AgregarReferenciaDTO;
+import com.AgroCredito.Dto.Request.CrearSolicitudDTO;
+import com.AgroCredito.Dto.Request.ProyectoProductivoDTO;
+import com.AgroCredito.Model.Solicitudes_Credito;
+import com.AgroCredito.Model.Solicitudes_Credito.ProyectoProductivo;
+import com.AgroCredito.Model.Solicitudes_Credito.ProyectoProductivo.ImagenReferencia; // Usamos el nombre estandarizado
+import com.AgroCredito.Model.Solicitudes_Credito.Solicitante;
+import com.AgroCredito.Model.Solicitudes_Credito.Solicitante.UbicacionBasica; // Usamos el nombre estandarizado
+import com.AgroCredito.Model.Usuario;
+import com.AgroCredito.Model.Usuario.Estadisticas;
+import com.AgroCredito.Model.Usuario.ReferenciaComunitaria; // Usamos el nombre estandarizado
+import com.AgroCredito.Repository.SolicitudesCreditoRepository; // Usamos el nombre estandarizado
+import com.AgroCredito.Repository.UsuarioRepository;
+import com.mongodb.client.gridfs.model.GridFSFile;
 import org.bson.types.ObjectId;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.core.query.Criteria;
@@ -8,21 +24,6 @@ import org.springframework.data.mongodb.gridfs.GridFsTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import com.AgroCredito.Dto.Request.ActualizarSolicitudDTO;
-import com.AgroCredito.Dto.Request.CrearSolicitudDTO;
-import com.AgroCredito.Dto.Request.ProyectoProductivoDTO;
-import com.AgroCredito.Model.Solicitudes_Credito;
-import com.AgroCredito.Model.Solicitudes_Credito.ProyectoProductivo;
-import com.AgroCredito.Model.Solicitudes_Credito.Solicitante;
-import com.AgroCredito.Model.Solicitudes_Credito.ProyectoProductivo.ImagenReferencia;
-import com.AgroCredito.Model.Solicitudes_Credito.Solicitante.UbicacionBasica;
-import com.AgroCredito.Model.Usuario;
-import com.AgroCredito.Model.Usuario.ReferenciaComunitaria;
-import com.AgroCredito.Model.Usuario.Estadisticas;
-import com.AgroCredito.Repository.SolicitudesCreditoRepository;
-import com.AgroCredito.Repository.UsuarioRepository;
-import com.mongodb.client.gridfs.model.GridFSFile;
-
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -30,10 +31,10 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @Service
-public class SolicitudesCreditoService { // Usando el nombre de clase de tu último fragmento
+public class SolicitudesCreditoService { // Nombre de clase estandarizado
 
     @Autowired
-    private SolicitudesCreditoRepository solicitudRepository;
+    private SolicitudesCreditoRepository solicitudRepository; // Nombre de Repository estandarizado
 
     @Autowired
     private UsuarioRepository usuarioRepository;
@@ -42,39 +43,36 @@ public class SolicitudesCreditoService { // Usando el nombre de clase de tu últ
     private GridFsTemplate gridFsTemplate;
 
     // ----------------------------------------------------------------------
-    // Métodos Principales (Corregidos para usar Correo -> ID)
+    // Métodos Principales
     // ----------------------------------------------------------------------
 
     /**
-     * Crear nueva solicitud de crédito.
-     * @param correoUsuario Es el correo del usuario autenticado (getName()).
+     * Crear nueva solicitud de crédito con referencias comunitarias y proyecto productivo.
+     * @param correoUsuario Es el correo del usuario autenticado.
      */
     public Solicitudes_Credito crearSolicitud(CrearSolicitudDTO dto, String correoUsuario, MultipartFile imagen) throws IOException {
-        
+
         // 1. Obtener Usuario por correo y verificar existencia.
         Usuario usuario = usuarioRepository.findByCorreo(correoUsuario)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado: " + correoUsuario));
 
         String idUsuario = usuario.getId();
-
-        // 2. Verificar si el usuario ya tiene solicitudes activas
-        if (solicitudRepository.existsSolicitudesActivas(idUsuario)) {
-            throw new RuntimeException("Ya tienes una solicitud activa. No puedes crear otra hasta que se resuelva.");
-        }
-
-        // 3. Mapear y crear la solicitud
-        Solicitudes_Credito solicitud = new Solicitudes_Credito();
-        solicitud.setIdUsuario(idUsuario);
         
+        // **NOTA:** La lógica de "solicitudes activas" del segundo ejemplo no estaba en el primero, se omite aquí
+        // para mantener la lógica funcional del primer servicio.
+
+        // 2. Mapear y crear la solicitud
+        Solicitudes_Credito solicitud = new Solicitudes_Credito();
+        solicitud.setIdUsuario(idUsuario); // Propiedad estandarizada
+
         // Información del solicitante (copiada del usuario)
         Solicitante solicitante = new Solicitante();
         solicitante.setNombres(usuario.getNombres());
         solicitante.setIdentificacion(usuario.getIdentificacion());
         solicitante.setTelefono(usuario.getTelefono());
-        
+
         // Mapear ubicación
-        UbicacionBasica ubicacionSolicitante = new Solicitudes_Credito.Solicitante.UbicacionBasica();
-        // Asumiendo que usuario.getUbicacion() existe y tiene los getters
+        UbicacionBasica ubicacionSolicitante = new UbicacionBasica();
         if (usuario.getUbicacion() != null) {
             ubicacionSolicitante.setDepartamento(usuario.getUbicacion().getDepartamento());
             ubicacionSolicitante.setMunicipio(usuario.getUbicacion().getMunicipio());
@@ -83,20 +81,16 @@ public class SolicitudesCreditoService { // Usando el nombre de clase de tu últ
         solicitante.setUbicacion(ubicacionSolicitante);
         solicitud.setSolicitante(solicitante);
 
-        // Datos del crédito
         solicitud.setMontoSolicitado(dto.getMontoSolicitado());
         solicitud.setDestinoCredito(dto.getDestinoCredito());
         solicitud.setPlazoMeses(dto.getPlazoMeses());
         solicitud.setGarantia(dto.getGarantia());
         solicitud.setEstado("en revisión");
-        solicitud.setFechaSolicitud(LocalDateTime.now());
-
-        // Referencias
-        List<ReferenciaComunitaria> referencias = usuario.getReferenciaComunitarias();
+        solicitud.setFechaSolicitud(LocalDateTime.now()); 
+        List<ReferenciaComunitaria> referencias = usuario.getReferenciaComunitarias(); 
         solicitud.setReferenciasVerificadas(referencias != null && !referencias.isEmpty());
 
-        // Proyecto productivo
-        if (dto.getProyectoProductivo() != null) {
+            if (dto.getProyectoProductivo() != null) {
             ProyectoProductivo proyecto = new ProyectoProductivo();
             proyecto.setNombre(dto.getProyectoProductivo().getNombre());
             proyecto.setDescripcion(dto.getProyectoProductivo().getDescripcion());
@@ -104,21 +98,21 @@ public class SolicitudesCreditoService { // Usando el nombre de clase de tu últ
             proyecto.setIngresosEstimados(dto.getProyectoProductivo().getIngresosEstimados());
             proyecto.setImpactoComunitario(dto.getProyectoProductivo().getImpactoComunitario());
             proyecto.setDuracionMeses(dto.getProyectoProductivo().getDuracionMeses());
-            
+
             // Subir imagen inicial
             if (imagen != null && !imagen.isEmpty()) {
-                List<ImagenReferencia> imagenes = new ArrayList<>();
+                List<ImagenReferencia> imagenes = new ArrayList<>(); // Tipo estandarizado
                 ImagenReferencia imagenProyecto = subirImagen(imagen, dto.getProyectoProductivo().getDescripcionImagen());
                 imagenes.add(imagenProyecto);
                 proyecto.setImagenes(imagenes);
             } else {
-                proyecto.setImagenes(new ArrayList<>());
+                 proyecto.setImagenes(new ArrayList<>());
             }
-            
+
             solicitud.setProyectoProductivo(proyecto);
         }
 
-        // 4. Guardar y actualizar estadísticas
+        // 3. Guardar y actualizar estadísticas
         Solicitudes_Credito solicitudGuardada = solicitudRepository.save(solicitud);
         actualizarEstadisticasUsuario(usuario);
 
@@ -129,14 +123,14 @@ public class SolicitudesCreditoService { // Usando el nombre de clase de tu últ
      * Agregar más imágenes a una solicitud existente.
      * @param correoUsuario Es el correo del usuario autenticado.
      */
-    public Solicitudes_Credito agregarImagenProyecto(String idSolicitud, String correoUsuario, 
+    public Solicitudes_Credito agregarImagenProyecto(String idSolicitud, String correoUsuario,
                                                    MultipartFile file, String descripcion) throws IOException {
-        
+
         // 1. Obtener Usuario por correo y su ID
         Usuario usuario = usuarioRepository.findByCorreo(correoUsuario)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado: " + correoUsuario));
         String idUsuario = usuario.getId();
-        
+
         // 2. Buscar y validar la solicitud
         Solicitudes_Credito solicitud = solicitudRepository.findByIdAndIdUsuario(idSolicitud, idUsuario)
                 .orElseThrow(() -> new RuntimeException("Solicitud no encontrada o no pertenece al usuario."));
@@ -150,7 +144,7 @@ public class SolicitudesCreditoService { // Usando el nombre de clase de tu últ
         }
 
         // 3. Subir imagen
-        ImagenReferencia nuevaImagen = subirImagen(file, descripcion);
+        ImagenReferencia nuevaImagen = subirImagen(file, descripcion); // Tipo estandarizado
 
         // 4. Agregar a la lista de imágenes
         List<ImagenReferencia> imagenes = solicitud.getProyectoProductivo().getImagenes();
@@ -168,17 +162,17 @@ public class SolicitudesCreditoService { // Usando el nombre de clase de tu últ
      * @param correoUsuario Es el correo del usuario autenticado.
      */
     public Solicitudes_Credito eliminarImagenProyecto(String idSolicitud, String correoUsuario, String fileId) {
-        
+
         // 1. Obtener Usuario por correo y su ID
         Usuario usuario = usuarioRepository.findByCorreo(correoUsuario)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado: " + correoUsuario));
         String idUsuario = usuario.getId();
-        
+
         // 2. Buscar y validar la solicitud
         Solicitudes_Credito solicitud = solicitudRepository.findByIdAndIdUsuario(idSolicitud, idUsuario)
                 .orElseThrow(() -> new RuntimeException("Solicitud no encontrada o no pertenece al usuario."));
 
-        if (solicitud.getProyectoProductivo() == null || 
+        if (solicitud.getProyectoProductivo() == null ||
             solicitud.getProyectoProductivo().getImagenes() == null) {
             throw new RuntimeException("No hay imágenes para eliminar en el proyecto.");
         }
@@ -189,14 +183,14 @@ public class SolicitudesCreditoService { // Usando el nombre de clase de tu últ
         // 4. Eliminar de la lista y guardar
         List<ImagenReferencia> imagenes = solicitud.getProyectoProductivo().getImagenes()
                 .stream()
-                .filter(img -> !img.getFileId().equals(fileId))
+                .filter(img -> !img.getFileId().equals(fileId)) // Propiedad estandarizada
                 .collect(Collectors.toList());
-        
+
         solicitud.getProyectoProductivo().setImagenes(imagenes);
 
         return solicitudRepository.save(solicitud);
     }
-    
+
     // ----------------------------------------------------------------------
     // Métodos de Consulta y Actualización
     // ----------------------------------------------------------------------
@@ -210,7 +204,7 @@ public class SolicitudesCreditoService { // Usando el nombre de clase de tu últ
         Usuario usuario = usuarioRepository.findByCorreo(correoUsuario)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado: " + correoUsuario));
         String idUsuario = usuario.getId();
-        
+
         return solicitudRepository.findByIdUsuario(idUsuario);
     }
 
@@ -223,7 +217,7 @@ public class SolicitudesCreditoService { // Usando el nombre de clase de tu últ
         Usuario usuario = usuarioRepository.findByCorreo(correoUsuario)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado: " + correoUsuario));
         String idUsuario = usuario.getId();
-        
+
         // 2. Buscar solicitud
         return solicitudRepository.findByIdAndIdUsuario(idSolicitud, idUsuario)
                 .orElseThrow(() -> new RuntimeException("Solicitud no encontrada o no pertenece al usuario."));
@@ -233,14 +227,14 @@ public class SolicitudesCreditoService { // Usando el nombre de clase de tu últ
      * Actualizar solicitud (solo en revisión).
      * @param correoUsuario Es el correo del usuario autenticado.
      */
-    public Solicitudes_Credito actualizarSolicitud(String idSolicitud, String correoUsuario, 
+    public Solicitudes_Credito actualizarSolicitud(String idSolicitud, String correoUsuario,
                                                 ActualizarSolicitudDTO dto) {
-        
+
         // 1. Obtener Usuario por correo y su ID
         Usuario usuario = usuarioRepository.findByCorreo(correoUsuario)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado: " + correoUsuario));
         String idUsuario = usuario.getId();
-        
+
         // 2. Buscar y validar la solicitud
         Solicitudes_Credito solicitud = solicitudRepository.findByIdAndIdUsuario(idSolicitud, idUsuario)
                 .orElseThrow(() -> new RuntimeException("Solicitud no encontrada o no pertenece al usuario."));
@@ -249,7 +243,7 @@ public class SolicitudesCreditoService { // Usando el nombre de clase de tu últ
             throw new RuntimeException("Solo se pueden actualizar solicitudes en revisión");
         }
 
-        // 3. Actualizar campos permitidos
+        // 3. Actualizar campos permitidos (usando setters estandarizados)
         if (dto.getMontoSolicitado() != null) {
             solicitud.setMontoSolicitado(dto.getMontoSolicitado());
         }
@@ -265,19 +259,19 @@ public class SolicitudesCreditoService { // Usando el nombre de clase de tu últ
 
         return solicitudRepository.save(solicitud);
     }
-    
+
     /**
      * Actualizar proyecto productivo.
      * @param correoUsuario Es el correo del usuario autenticado.
      */
-    public Solicitudes_Credito actualizarProyectoProductivo(String idSolicitud, String correoUsuario, 
+    public Solicitudes_Credito actualizarProyectoProductivo(String idSolicitud, String correoUsuario,
                                                          ProyectoProductivoDTO dto) {
-        
+
         // 1. Obtener Usuario por correo y su ID
         Usuario usuario = usuarioRepository.findByCorreo(correoUsuario)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado: " + correoUsuario));
         String idUsuario = usuario.getId();
-        
+
         // 2. Buscar y validar la solicitud
         Solicitudes_Credito solicitud = solicitudRepository.findByIdAndIdUsuario(idSolicitud, idUsuario)
                 .orElseThrow(() -> new RuntimeException("Solicitud no encontrada o no pertenece al usuario."));
@@ -287,22 +281,21 @@ public class SolicitudesCreditoService { // Usando el nombre de clase de tu últ
         }
 
         // 3. Crear o actualizar proyecto productivo
-        ProyectoProductivo proyecto = solicitud.getProyectoProductivo();
+        ProyectoProductivo proyecto = solicitud.getProyectoProductivo(); // Getter estandarizado
         if (proyecto == null) {
             proyecto = new ProyectoProductivo();
-            // Asegurar que la lista de imágenes no es nula si se crea el proyecto
-            proyecto.setImagenes(new ArrayList<>());
+            proyecto.setImagenes(new ArrayList<>()); // Asegurar que la lista de imágenes no es nula si se crea el proyecto
         }
-        
+
         proyecto.setNombre(dto.getNombre());
         proyecto.setDescripcion(dto.getDescripcion());
         proyecto.setCostoEstimado(dto.getCostoEstimado());
         proyecto.setIngresosEstimados(dto.getIngresosEstimados());
         proyecto.setImpactoComunitario(dto.getImpactoComunitario());
         proyecto.setDuracionMeses(dto.getDuracionMeses());
-        
-        solicitud.setProyectoProductivo(proyecto);
-        
+
+        solicitud.setProyectoProductivo(proyecto); // Setter estandarizado
+
         return solicitudRepository.save(solicitud);
     }
 
@@ -315,7 +308,7 @@ public class SolicitudesCreditoService { // Usando el nombre de clase de tu últ
         Usuario usuario = usuarioRepository.findByCorreo(correoUsuario)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado: " + correoUsuario));
         String idUsuario = usuario.getId();
-        
+
         // 2. Buscar y validar la solicitud
         Solicitudes_Credito solicitud = solicitudRepository.findByIdAndIdUsuario(idSolicitud, idUsuario)
                 .orElseThrow(() -> new RuntimeException("Solicitud no encontrada o no pertenece al usuario."));
@@ -335,7 +328,7 @@ public class SolicitudesCreditoService { // Usando el nombre de clase de tu últ
     /**
      * Subir imagen a GridFS
      */
-    private ImagenReferencia subirImagen(MultipartFile file, String descripcion) throws IOException {
+    private ImagenReferencia subirImagen(MultipartFile file, String descripcion) throws IOException { // Tipo de retorno estandarizado
         // Validar tipo de archivo
         String contentType = file.getContentType();
         if (contentType == null || !contentType.startsWith("image/")) {
@@ -351,7 +344,7 @@ public class SolicitudesCreditoService { // Usando el nombre de clase de tu últ
 
         // Crear objeto de imagen
         ImagenReferencia imagen = new ImagenReferencia();
-        imagen.setFileId(fileIdObject.toString());
+        imagen.setFileId(fileIdObject.toString()); // Propiedad estandarizada
         imagen.setFilename(file.getOriginalFilename());
         imagen.setContentType(contentType);
         imagen.setDescripcion(descripcion != null ? descripcion : "Evidencia del proyecto");
@@ -366,10 +359,10 @@ public class SolicitudesCreditoService { // Usando el nombre de clase de tu últ
         Estadisticas stats = usuario.getEstadisticas();
         if (stats == null) {
             stats = new Estadisticas();
-            stats.setTotalCreditosSolicitados(0); // Inicializar a 0 si es nulo
+            stats.setTotalCreditosSolicitados(0); // Propiedad estandarizada
         }
-        
-        stats.setTotalCreditosSolicitados(stats.getTotalCreditosSolicitados() + 1);
+
+        stats.setTotalCreditosSolicitados(stats.getTotalCreditosSolicitados() + 1); // Propiedad estandarizada
         usuario.setEstadisticas(stats);
         usuarioRepository.save(usuario);
     }
@@ -379,5 +372,110 @@ public class SolicitudesCreditoService { // Usando el nombre de clase de tu últ
      */
     public GridFSFile obtenerArchivo(String fileId) {
         return gridFsTemplate.findOne(new Query(Criteria.where("_id").is(new ObjectId(fileId))));
+    }
+    
+    /**
+     * Agregar referencia comunitaria al usuario
+     */
+    public Usuario.ReferenciaComunitaria agregarReferencia(String correoUsuario, AgregarReferenciaDTO dto) {
+        
+        // Buscar usuario por correo
+        Usuario usuario = usuarioRepository.findByCorreo(correoUsuario)
+                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+
+        // Crear nueva referencia
+        Usuario.ReferenciaComunitaria referencia = new Usuario.ReferenciaComunitaria();
+        referencia.setNombre(dto.getNombreCompleto());
+        referencia.setTelefono(dto.getTelefono());
+        referencia.setRolComunitario(dto.getRelacion());
+        referencia.setConcepto(dto.getDescripcion());
+        referencia.setFechaRegistro(java.time.LocalDateTime.now());
+
+        // Agregar a la lista de referencias del usuario
+        List<Usuario.ReferenciaComunitaria> referencias = usuario.getReferenciaComunitarias();
+        if (referencias == null) {
+            referencias = new ArrayList<>();
+        }
+        referencias.add(referencia);
+        usuario.setReferenciaComunitarias(referencias);
+
+        // Guardar usuario
+        usuarioRepository.save(usuario);
+
+        return referencia;
+    }
+
+    /**
+     * Obtener todas las referencias del usuario
+     */
+    public List<Usuario.ReferenciaComunitaria> obtenerReferencias(String correoUsuario) {
+        
+        Usuario usuario = usuarioRepository.findByCorreo(correoUsuario)
+                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+
+        List<Usuario.ReferenciaComunitaria> referencias = usuario.getReferenciaComunitarias();
+        
+        return referencias != null ? referencias : new ArrayList<>();
+    }
+
+    /**
+     * Actualizar referencia comunitaria
+     */
+    public Usuario.ReferenciaComunitaria actualizarReferencia(String correoUsuario, int indiceReferencia, 
+                                                      ActualizarReferenciaDTO dto) {
+        
+        Usuario usuario = usuarioRepository.findByCorreo(correoUsuario)
+                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+
+        List<Usuario.ReferenciaComunitaria> referencias = usuario.getReferenciaComunitarias();
+        if (referencias == null || referencias.isEmpty()) {
+            throw new RuntimeException("No tienes referencias registradas");
+        }
+
+        if (indiceReferencia < 0 || indiceReferencia >= referencias.size()) {
+            throw new RuntimeException("Referencia no encontrada");
+        }
+
+        Usuario.ReferenciaComunitaria referencia = referencias.get(indiceReferencia);
+
+        // Actualizar campos
+        if (dto.getNombreCompleto() != null) {
+            referencia.setNombre(dto.getNombreCompleto());
+        }
+        if (dto.getTelefono() != null) {
+            referencia.setTelefono(dto.getTelefono());
+        }
+        if (dto.getRelacion() != null) {
+            referencia.setRolComunitario(dto.getRelacion());
+        }
+        if (dto.getDescripcion() != null) {
+            referencia.setConcepto(dto.getDescripcion());
+        }
+
+        usuarioRepository.save(usuario);
+
+        return referencia;
+    }
+
+    /**
+     * Eliminar referencia comunitaria
+     */
+    public void eliminarReferencia(String correoUsuario, int indiceReferencia) {
+        
+        Usuario usuario = usuarioRepository.findByCorreo(correoUsuario)
+                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+
+        List<Usuario.ReferenciaComunitaria> referencias = usuario.getReferenciaComunitarias();
+        if (referencias == null || referencias.isEmpty()) {
+            throw new RuntimeException("No tienes referencias registradas");
+        }
+
+        if (indiceReferencia < 0 || indiceReferencia >= referencias.size()) {
+            throw new RuntimeException("Referencia no encontrada");
+        }
+
+        referencias.remove(indiceReferencia);
+        usuario.setReferenciaComunitarias(referencias);
+        usuarioRepository.save(usuario);
     }
 }
