@@ -7,7 +7,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.bson.types.ObjectId;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.mongodb.gridfs.GridFsResource;
 import org.springframework.data.mongodb.gridfs.GridFsTemplate;
@@ -25,7 +24,6 @@ import com.AgroCredito.Dto.Request.AgregarReferenciaDTO;
 import com.AgroCredito.Dto.Request.CrearSolicitudDTO;
 import com.AgroCredito.Dto.Request.ProyectoProductivoDTO;
 import com.AgroCredito.Model.Solicitudes_Credito;
-import com.AgroCredito.Model.Solicitudes_Credito.ProyectoProductivo;
 import com.AgroCredito.Model.Usuario;
 import com.AgroCredito.Service.SolicitudesCreditoService;
 import com.fasterxml.jackson.databind.ObjectMapper;

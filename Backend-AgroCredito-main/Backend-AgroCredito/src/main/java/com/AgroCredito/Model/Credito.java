@@ -40,7 +40,7 @@ public class Credito {
     private Integer plazoMeses;
     
     @Field("cuota_mensual")
-    private Double cuotaMensual;
+    private Long cuotaMensual;
     
     @Field("fecha_aprobacion")
     private LocalDateTime fechaAprobacion;
