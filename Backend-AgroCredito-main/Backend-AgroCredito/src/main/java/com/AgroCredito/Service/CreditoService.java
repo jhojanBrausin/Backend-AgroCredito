@@ -2,6 +2,7 @@ package com.AgroCredito.Service;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.AgroCredito.Dto.Request.AprobarSolicitudDTO;
 import com.AgroCredito.Dto.Request.CambiarEstadoCreditoDTO;
@@ -23,15 +24,14 @@ import com.AgroCredito.Repository.CreditoRepository;
 import com.AgroCredito.Repository.SolicitudesCreditoRepository;
 import com.AgroCredito.Repository.UsuarioRepository;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
-import java.util.Calendar;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -47,24 +47,23 @@ public class CreditoService {
     @Autowired
     private UsuarioRepository usuarioRepository;
     
-    // ============================================
-    // MÉTODOS DE ADMINISTRACIÓN - SOLICITUDES
-    // ============================================
+    @Autowired
+    private GridFSService gridFSService;
+    
 
     public List<Solicitudes_Credito> listarSolicitudesConFiltros(String estado, String departamento, LocalDateTime fechaDesde) {
-        // Lógica de filtros avanzada (simulación simplificada)
+        
         List<Solicitudes_Credito> solicitudes = solicitudRepository.findAll();
         
         if (estado != null && !estado.isEmpty()) {
             solicitudes = solicitudes.stream().filter(s -> s.getEstado().equalsIgnoreCase(estado)).collect(Collectors.toList());
         }
-        // Aquí se implementarían filtros por departamento y fecha si estuvieran en el repositorio
         
         return solicitudes;
     }
 
     public List<Solicitudes_Credito> listarSolicitudesPendientes() {
-        // En MongoDB/JPA: findByEstado("en revisión")
+        
         return solicitudRepository.findByEstado("en revisión");
     }
 
@@ -72,11 +71,9 @@ public class CreditoService {
         Solicitudes_Credito solicitud = solicitudRepository.findById(idSolicitud)
                 .orElseThrow(() -> new RuntimeException("Solicitud no encontrada con ID: " + idSolicitud));
         
-        // 1. Obtener el ID del administrador/evaluador a partir del correo (CORRECCIÓN APLICADA)
         Usuario admin = usuarioRepository.findByCorreo(correoAdmin)
                 .orElseThrow(() -> new RuntimeException("Evaluador no encontrado con correo: " + correoAdmin));
                 
-        // Simulación de actualización de evaluación
         Evaluacion nuevaEvaluacion = new Evaluacion();
         nuevaEvaluacion.setPuntaje(dto.getPuntaje());
         nuevaEvaluacion.setObservaciones(dto.getObservaciones());
@@ -88,76 +85,138 @@ public class CreditoService {
         return solicitudRepository.save(solicitud);
     }
 
-    public Credito aprobarSolicitud(String idSolicitud, AprobarSolicitudDTO dto, String correoAdmin) {
-        // Lógica de aprobación y creación de crédito (cálculo de cuota y fechas)
-        
-        Solicitudes_Credito solicitud = solicitudRepository.findById(idSolicitud)
-                .orElseThrow(() -> new RuntimeException("Solicitud no encontrada"));
+        public Credito aprobarSolicitud(String idSolicitud, AprobarSolicitudDTO dto, String correoAdmin) {
+            
+            Solicitudes_Credito solicitud = solicitudRepository.findById(idSolicitud)
+                    .orElseThrow(() -> new RuntimeException("Solicitud no encontrada"));
 
-        if (!"en revisión".equals(solicitud.getEstado())) {
-            throw new RuntimeException("Solo se pueden aprobar solicitudes en revisión");
+            if (!"en revisión".equals(solicitud.getEstado())) {
+                throw new RuntimeException("Solo se pueden aprobar solicitudes en revisión");
+            }
+
+            Usuario admin = usuarioRepository.findByCorreo(correoAdmin)
+                    .orElseThrow(() -> new RuntimeException("Administrador no encontrado"));
+            Usuario usuario = usuarioRepository.findById(solicitud.getIdUsuario())
+                    .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+
+
+            solicitud.setEstado("aprobado");
+            solicitudRepository.save(solicitud);
+
+
+            Credito credito = new Credito();
+            credito.setIdSolicitud(idSolicitud);
+            credito.setIdUsuario(solicitud.getIdUsuario());
+
+
+            Credito.UsuarioEmbedido usuarioEmbedido = new Credito.UsuarioEmbedido();
+            usuarioEmbedido.setNombres(usuario.getNombres());
+            usuarioEmbedido.setIdentificacion(usuario.getIdentificacion());
+            usuarioEmbedido.setTelefono(usuario.getTelefono());
+            usuarioEmbedido.setCorreo(usuario.getCorreo());
+            usuarioEmbedido.setRol(usuario.getRol());
+
+
+            Usuario.Ubicacion ubicacionUsuario = usuario.getUbicacion();
+            if (ubicacionUsuario != null) {
+                Credito.UbicacionPrincipal ubicacionPrincipal = new Credito.UbicacionPrincipal();
+                ubicacionPrincipal.setDepartamento(ubicacionUsuario.getDepartamento());
+                ubicacionPrincipal.setMunicipio(ubicacionUsuario.getMunicipio());
+                ubicacionPrincipal.setVereda(ubicacionUsuario.getVereda());
+
+                if (ubicacionUsuario.getCoordenadas() != null) {
+
+                	Credito.UbicacionPrincipal.Coordenadas coordenadasCredito = new Credito.UbicacionPrincipal.Coordenadas();
+                    coordenadasCredito.setLat(ubicacionUsuario.getCoordenadas().getLat());
+                    coordenadasCredito.setLng(ubicacionUsuario.getCoordenadas().getLng());
+                    ubicacionPrincipal.setCoordenadas(coordenadasCredito);
+                }
+                usuarioEmbedido.setUbicacionPrincipal(ubicacionPrincipal);
+            }
+
+            
+            usuarioEmbedido.setActividadEconomica(usuario.getActividadEconomica());
+            usuarioEmbedido.setIngresosAprox(usuario.getIngresosAprox());
+
+
+            usuarioEmbedido.setHistorialCrediticioResumen(usuario.getEstadisticas() != null ? usuario.getEstadisticas().getHistorialCrediticio() : null); 
+            
+            credito.setUsuarioEmbedido(usuarioEmbedido);
+
+            Credito.SolicitudEmbedida solicitudEmbedida = new Credito.SolicitudEmbedida();
+
+            Date fechaSolicitudDate = Date.from(solicitud.getFechaSolicitud().atZone(ZoneId.systemDefault()).toInstant());
+            solicitudEmbedida.setFechaSolicitud(fechaSolicitudDate); 
+            solicitudEmbedida.setMontoSolicitado(solicitud.getMontoSolicitado());
+            solicitudEmbedida.setDestinoCredito(solicitud.getDestinoCredito());
+            solicitudEmbedida.setPlazoMesesSolicitado(solicitud.getPlazoMeses());
+            solicitudEmbedida.setGarantia(solicitud.getGarantia());
+            solicitudEmbedida.setPuntajeEvaluacion(solicitud.getEvaluacion() != null ? solicitud.getEvaluacion().getPuntaje() : null); // Uso getEvaluacion().getPuntaje()
+            
+            Solicitudes_Credito.ProyectoProductivo proyectoSolicitud = solicitud.getProyectoProductivo();
+            if (proyectoSolicitud != null) {
+                Credito.ProyectoProductivoResumen proyectoCredito = new Credito.ProyectoProductivoResumen();
+                proyectoCredito.setNombre(proyectoSolicitud.getNombre());
+                proyectoCredito.setDescripcion(proyectoSolicitud.getDescripcion());
+                proyectoCredito.setCostoEstimado(proyectoSolicitud.getCostoEstimado());
+                proyectoCredito.setIngresosEstimados(proyectoSolicitud.getIngresosEstimados());
+                proyectoCredito.setImpactoComunitario(proyectoSolicitud.getImpactoComunitario());
+                proyectoCredito.setDuracionMeses(proyectoSolicitud.getDuracionMeses());
+                
+                List<Credito.ProyectoProductivoResumen.ImagenReferencia> imagenesMapeadas = new ArrayList<>();
+                for (Solicitudes_Credito.ProyectoProductivo.ImagenReferencia imgSol : proyectoSolicitud.getImagenes()) {
+                    Credito.ProyectoProductivoResumen.ImagenReferencia imgCred = new Credito.ProyectoProductivoResumen.ImagenReferencia();
+                    imgCred.setFileId(imgSol.getFileId());
+                    imgCred.setFilename(imgSol.getFilename());
+                    imgCred.setContentType(imgSol.getContentType());
+                    imgCred.setDescripcion(imgSol.getDescripcion());
+                    imagenesMapeadas.add(imgCred);
+                }
+                proyectoCredito.setImagenes(imagenesMapeadas); 
+                
+                solicitudEmbedida.setProyectoProductivoResumen(proyectoCredito);
+            }
+            
+            credito.setSolicitudEmbedida(solicitudEmbedida);
+
+            Credito.Aprobador aprobador = new Credito.Aprobador();
+            aprobador.setId(admin.getId());
+            aprobador.setNombres(admin.getNombres());
+            aprobador.setRol(admin.getRol());
+            credito.setAprobador(aprobador);
+
+            credito.setMontoAprobado(dto.getMontoAprobado());
+            credito.setInteresMensual(dto.getInteresMensual());
+            credito.setPlazoMeses(dto.getPlazoMeses());
+
+            double tasaMensual = dto.getInteresMensual() / 100.0;
+            double montoAprobado = dto.getMontoAprobado();
+            int plazoMeses = dto.getPlazoMeses();
+
+            double cuotaMensualCalc = (tasaMensual == 0) ? (montoAprobado / plazoMeses) : 
+                (montoAprobado * tasaMensual) / (1 - Math.pow(1 + tasaMensual, -plazoMeses));
+            
+            credito.setCuotaMensual(Math.round(cuotaMensualCalc)); 
+
+            LocalDateTime fechaAprobacion = LocalDateTime.now();
+            credito.setFechaAprobacion(fechaAprobacion);
+            
+            LocalDateTime vencimientoLocal = fechaAprobacion.plusMonths(plazoMeses);
+            Date fechaVencimientoDate = Date.from(vencimientoLocal.atZone(ZoneId.systemDefault()).toInstant());
+            credito.setFechaVencimiento(fechaVencimientoDate);
+            
+            credito.setEstado("activo");
+            credito.setSaldoPendiente(montoAprobado);
+            credito.setTotalPagado(0.0);
+            
+            credito.setMetricas(new Credito.Metricas());
+            credito.setHistorialPagos(new ArrayList<>());
+            credito.setEvidenciasCultivo(new ArrayList<>());
+
+            Credito creditoGuardado = creditoRepository.save(credito);
+
+            return creditoGuardado;
         }
-
-        Usuario admin = usuarioRepository.findByCorreo(correoAdmin)
-                .orElseThrow(() -> new RuntimeException("Administrador no encontrado"));
-        Usuario usuario = usuarioRepository.findById(solicitud.getIdUsuario())
-                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
-
-        solicitud.setEstado("aprobado");
-        solicitudRepository.save(solicitud);
-
-        Credito credito = new Credito();
-        credito.setIdSolicitud(idSolicitud);
-        credito.setIdUsuario(solicitud.getIdUsuario());
-
-        // Lógica de Embedding (Usuario, Solicitud, Aprobador)
-        Credito.UsuarioEmbedido usuarioEmbedido = new Credito.UsuarioEmbedido();
-        usuarioEmbedido.setNombres(usuario.getNombres());
-        credito.setUsuarioEmbedido(usuarioEmbedido);
-
-        Credito.SolicitudEmbedida solicitudEmbedida = new Credito.SolicitudEmbedida();
-        Date fechaSolicitudDate = Date.from(solicitud.getFechaSolicitud().atZone(ZoneId.systemDefault()).toInstant());
-        solicitudEmbedida.setFechaSolicitud(fechaSolicitudDate); 
-        credito.setSolicitudEmbedida(solicitudEmbedida);
-
-        Credito.Aprobador aprobador = new Credito.Aprobador();
-        aprobador.setId(admin.getId());
-        aprobador.setNombres(admin.getNombres());
-        aprobador.setRol(admin.getRol());
-        credito.setAprobador(aprobador);
-
-        // Datos del crédito
-        credito.setMontoAprobado(dto.getMontoAprobado());
-        credito.setInteresMensual(dto.getInteresMensual());
-        credito.setPlazoMeses(dto.getPlazoMeses());
-
-        // Cálculo de cuota mensual (Fórmula Francesa)
-        double tasaMensual = dto.getInteresMensual() / 100.0;
-        double montoAprobado = dto.getMontoAprobado();
-        int plazoMeses = dto.getPlazoMeses();
-
-        double cuotaMensualCalc = (montoAprobado * tasaMensual) / (1 - Math.pow(1 + tasaMensual, -plazoMeses));
-        
-        credito.setCuotaMensual(Math.round(cuotaMensualCalc)); 
-
-        LocalDateTime fechaAprobacion = LocalDateTime.now();
-        credito.setFechaAprobacion(fechaAprobacion);
-        
-        LocalDateTime vencimientoLocal = fechaAprobacion.plusMonths(plazoMeses);
-        Date fechaVencimientoDate = Date.from(vencimientoLocal.atZone(ZoneId.systemDefault()).toInstant());
-        credito.setFechaVencimiento(fechaVencimientoDate);
-        
-        credito.setEstado("activo");
-        credito.setSaldoPendiente(montoAprobado);
-        credito.setTotalPagado(0.0);
-        credito.setMetricas(new Credito.Metricas());
-        credito.setHistorialPagos(new ArrayList<>());
-        credito.setEvidenciasCultivo(new ArrayList<>());
-
-        Credito creditoGuardado = creditoRepository.save(credito);
-
-        return creditoGuardado;
-    }
 
     public Solicitudes_Credito rechazarSolicitud(String idSolicitud, RechazarSolicitudDTO dto, String correoAdmin) {
         Solicitudes_Credito solicitud = solicitudRepository.findById(idSolicitud)
@@ -166,29 +225,21 @@ public class CreditoService {
         if (!"en revisión".equals(solicitud.getEstado())) {
             throw new RuntimeException("Solo se pueden rechazar solicitudes en revisión");
         }
-        
-        // Aquí se podría agregar el motivo de rechazo al objeto solicitud
+
         solicitud.setEstado("rechazada");
+        solicitud.getEvaluacion().setObservaciones(dto.getMotivo());
+        
         return solicitudRepository.save(solicitud);
     }
 
-    // ============================================
-    // 4. CONSULTA DE CRÉDITOS (Usuario) - LÓGICA AGREGADA
-    // ============================================
-
-    /**
-     * Listar todos los créditos de un usuario.
-     */
+   
     public List<Credito> listarCreditosUsuario(String correoUsuario) {
         Usuario usuario = usuarioRepository.findByCorreo(correoUsuario)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
-        // Lógica: Buscar en el repositorio todos los créditos por ID de usuario
         return creditoRepository.findByIdUsuario(usuario.getId());
     }
 
-    /**
-     * Obtener detalle de un crédito específico.
-     */
+
     public Credito obtenerDetalleCredito(String idCredito, String correoUsuario) {
         Credito credito = creditoRepository.findById(idCredito)
                 .orElseThrow(() -> new RuntimeException("Crédito no encontrado con ID: " + idCredito));
@@ -196,28 +247,21 @@ public class CreditoService {
         Usuario usuario = usuarioRepository.findByCorreo(correoUsuario)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
         
-        // Validación de Acceso: El crédito debe pertenecer al usuario.
         if (!credito.getIdUsuario().equals(usuario.getId())) {
             throw new RuntimeException("Acceso denegado. Este crédito no te pertenece.");
         }
         return credito;
     }
 
-    /**
-     * Listar solo los créditos activos de un usuario.
-     */
     public List<Credito> listarCreditosActivosUsuario(String correoUsuario) {
         Usuario usuario = usuarioRepository.findByCorreo(correoUsuario)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
-        // Lógica: Buscar en el repositorio por ID de usuario y estado "activo"
+
         return creditoRepository.findByIdUsuarioAndEstado(usuario.getId(), "activo");
     }
 
-    /**
-     * Generar y obtener el plan de pagos (amortización) de un crédito.
-     */
+ 
     public List<PlanPago> generarPlanPagos(String idCredito) {
-        // Lógica de cálculo de Plan de Pagos (amortización Francesa)
         Credito credito = creditoRepository.findById(idCredito)
                 .orElseThrow(() -> new RuntimeException("Crédito no encontrado"));
         
@@ -262,13 +306,6 @@ public class CreditoService {
     }
 
 
-    // ============================================
-    // 4. GESTIÓN DE CRÉDITOS (Administrador) - LÓGICA AGREGADA
-    // ============================================
-    
-    /**
-     * Listar todos los créditos con filtros (Admin).
-     */
     public List<Credito> listarCreditosAdmin(String estado, String idUsuario) {
         if (estado != null && !estado.isEmpty()) {
             return creditoRepository.findByEstado(estado);
@@ -276,68 +313,69 @@ public class CreditoService {
         if (idUsuario != null && !idUsuario.isEmpty()) {
             return creditoRepository.findByIdUsuario(idUsuario);
         }
-        // Si no hay filtros, se listan todos
         return creditoRepository.findAll();
     }
     
-    /**
-     * Cambiar estado de un crédito (Admin).
-     */
+
     public Credito cambiarEstadoCredito(String idCredito, CambiarEstadoCreditoDTO dto) {
         Credito credito = creditoRepository.findById(idCredito)
                 .orElseThrow(() -> new RuntimeException("Crédito no encontrado con ID: " + idCredito));
                 
-        // Lógica de cambio de estado
         credito.setEstado(dto.getEstado());
         
-        // Si se cambia a 'cancelado' o 'pagado', se pueden actualizar fechas de fin
-        // if (dto.getNuevoEstado().equals("pagado") || dto.getNuevoEstado().equals("cancelado")) {
-        //     credito.setFechaCierre(LocalDateTime.now());
-        // }
 
         return creditoRepository.save(credito);
     }
     
-    // ============================================
-    // 5. GESTIÓN DE PAGOS (HistorialPago Incrustado) - LÓGICA AGREGADA/COMPLETADA
-    // ============================================
 
-    public Credito registrarPago(RegistrarPagoDTO dto, String correoUsuario) {
-        Credito credito = creditoRepository.findById(dto.getIdCredito())
-                .orElseThrow(() -> new RuntimeException("Crédito no encontrado"));
-
+    public Credito registrarPagoConComprobante(
+            RegistrarPagoDTO dto, 
+            MultipartFile comprobante, 
+            String correoUsuario) throws IOException { 
+    	
         Usuario usuario = usuarioRepository.findByCorreo(correoUsuario)
-                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
-                
+            .orElseThrow(() -> new RuntimeException("Usuario no encontrado."));
+
+        Credito credito = creditoRepository.findById(dto.getIdCredito())
+            .orElseThrow(() -> new RuntimeException("Crédito no encontrado."));
+
         if (!credito.getIdUsuario().equals(usuario.getId())) {
             throw new RuntimeException("No puedes registrar pagos para este crédito.");
         }
         if (!"activo".equals(credito.getEstado())) {
             throw new RuntimeException("El crédito no está activo para registrar pagos.");
         }
+        
+        // 1. Obtener el DTO del servicio de archivos
+        SubirComprobanteDTO dtoDesdeGridFS = gridFSService.subirComprobante(comprobante);
 
+        // 2. CONVERTIR el DTO a la clase de modelo anidada que HistorialPago espera
+        ComprobanteFile comprobanteModel = new ComprobanteFile(); // 👈 Instancia la clase anidada (Credito.ComprobanteFile)
+        comprobanteModel.setFileId(dtoDesdeGridFS.getFileId()); 
+        comprobanteModel.setFilename(dtoDesdeGridFS.getFilename());
+        comprobanteModel.setContentType(dtoDesdeGridFS.getContentType());
+        
+        // 3. Crear HistorialPago
         HistorialPago nuevoPago = new HistorialPago();
-        nuevoPago.setId(UUID.randomUUID().toString()); // ID único para el documento incrustado
+        
+        nuevoPago.setId(UUID.randomUUID().toString());
         nuevoPago.setMonto(dto.getMonto());
         nuevoPago.setFechaPago(new Date()); 
         nuevoPago.setMetodoPago(dto.getMetodoPago());
         nuevoPago.setEstado("pendiente");
+        
+        // 4. Asignación CORREGIDA: Asignamos el objeto del modelo (ComprobanteFile)
+        nuevoPago.setComprobanteFile(comprobanteModel); 
 
-        // --- CORRECCIÓN: Usa los campos del DTO para ComprobanteFile ---
-        ComprobanteFile comprobante = new ComprobanteFile();
-        comprobante.setFileId(dto.getFileId()); 
-        comprobante.setFilename(dto.getFilename());
-        comprobante.setContentType(dto.getContentType());
-        nuevoPago.setComprobanteFile(comprobante);
-
+        if (credito.getHistorialPagos() == null) {
+            credito.setHistorialPagos(new ArrayList<>());
+        }
         credito.getHistorialPagos().add(nuevoPago);
         
+        // 5. Guardar y retornar
         return creditoRepository.save(credito);
     }
-    
-    /**
-     * Obtener el historial de pagos de un crédito (Validación de usuario).
-     */
+   
     public List<HistorialPago> obtenerHistorialPagos(String idCredito, String correoUsuario) {
         Credito credito = creditoRepository.findById(idCredito)
                 .orElseThrow(() -> new RuntimeException("Crédito no encontrado con ID: " + idCredito));
@@ -345,7 +383,6 @@ public class CreditoService {
         Usuario usuario = usuarioRepository.findByCorreo(correoUsuario)
                 .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
         
-        // Validación de Acceso: Solo el dueño o un administrador (implícito por el controlador) pueden ver el historial.
         if (!credito.getIdUsuario().equals(usuario.getId())) {
             throw new RuntimeException("Acceso denegado. Este historial de pagos no te pertenece.");
         }
@@ -353,9 +390,7 @@ public class CreditoService {
         return credito.getHistorialPagos();
     }
     
-    /**
-     * Obtener el detalle de un pago específico (Validación de usuario).
-     */
+
     public HistorialPago obtenerDetallePago(String idCredito, String idPago, String correoUsuario) {
          Credito credito = obtenerDetalleCredito(idCredito, correoUsuario); // Reutiliza la validación de pertenencia
 
@@ -365,22 +400,40 @@ public class CreditoService {
             .orElseThrow(() -> new RuntimeException("Pago no encontrado con ID: " + idPago));
     }
     
-    public Credito actualizarComprobante(String idCredito, String idPago, SubirComprobanteDTO dto) {
+    public Credito actualizarComprobante(
+            String idCredito, 
+            String idPago, 
+            MultipartFile comprobante, 
+            String correoUsuario) throws IOException { // Añadir el archivo y el email
+
+        // 1. Validar Usuario y Crédito
+        Usuario usuario = usuarioRepository.findByCorreo(correoUsuario)
+                .orElseThrow(() -> new RuntimeException("Usuario no encontrado."));
+
         Credito credito = creditoRepository.findById(idCredito)
                 .orElseThrow(() -> new RuntimeException("Crédito no encontrado"));
+                
+        if (!credito.getIdUsuario().equals(usuario.getId())) {
+            throw new RuntimeException("No puedes actualizar pagos para este crédito.");
+        }
 
-        HistorialPago pago = credito.getHistorialPagos().stream()
+            HistorialPago pago = credito.getHistorialPagos().stream()
             .filter(p -> idPago.equals(p.getId()))
             .findFirst()
             .orElseThrow(() -> new RuntimeException("Pago no encontrado."));
-            
-        // Simulación de actualización de file_id
-        ComprobanteFile comprobante = new ComprobanteFile();
-        comprobante.setFileId(dto.getFileId());
-        comprobante.setFilename(dto.getFilename());
-        comprobante.setContentType(dto.getContentType());
+
+        SubirComprobanteDTO dtoDesdeGridFS = gridFSService.subirComprobante(comprobante);
+
+        ComprobanteFile nuevoComprobante = new ComprobanteFile(); 
+        nuevoComprobante.setFileId(dtoDesdeGridFS.getFileId());
+        nuevoComprobante.setFilename(dtoDesdeGridFS.getFilename());
+        nuevoComprobante.setContentType(dtoDesdeGridFS.getContentType());
+
+        pago.setComprobanteFile(nuevoComprobante);
         
-        pago.setComprobanteFile(comprobante);
+        if ("rechazado".equals(pago.getEstado())) {
+            pago.setEstado("pendiente");
+        }
         
         return creditoRepository.save(credito);
     }
@@ -398,7 +451,6 @@ public class CreditoService {
             throw new RuntimeException("El pago ya fue procesado.");
         }
         
-        // LÓGICA DE AMORTIZACIÓN Y ACTUALIZACIÓN DE SALDOS
         double saldoAnterior = credito.getSaldoPendiente();
         double tasaMensual = credito.getInteresMensual() / 100.0;
         double montoPagado = pago.getMonto();
@@ -410,19 +462,16 @@ public class CreditoService {
             capitalCuota = 0; // El pago no cubrió el interés, todo es interés
         }
         
-        // 1. Actualizar el pago incrustado
         pago.setEstado("confirmado");
         pago.setInteresPagado(interesCuota); 
         pago.setCapitalPagado(capitalCuota); 
         pago.setSaldoRestante(saldoAnterior - capitalCuota); 
         
-        // 2. Actualizar el crédito principal
         credito.setSaldoPendiente(credito.getSaldoPendiente() - capitalCuota);
         credito.setTotalPagado(credito.getTotalPagado() + montoPagado);
         
         credito.getMetricas().setPagosRealizados(credito.getMetricas().getPagosRealizados() + 1);
         
-        // 3. Verificar cierre
         if (credito.getSaldoPendiente() <= 0.01) {
             credito.setEstado("pagado");
         }
@@ -444,19 +493,11 @@ public class CreditoService {
         }
         
         pago.setEstado("rechazado");
-        // pago.setMotivoRechazo(motivoRechazo); // Asumiendo que el modelo tiene este campo
         
         return creditoRepository.save(credito);
     }
 
 
-    // ============================================
-    // MÉTODOS DE REPORTES Y ESTADÍSTICAS (Admin) - LÓGICA SIMULADA
-    // ============================================
-    
-    /**
-     * Genera un reporte resumido de solicitudes, agrupando por estado.
-     */
     public Map<String, Object> generarReporteSolicitudes(String estado, LocalDateTime fechaDesde) {
         // En un entorno real, esto sería una consulta de agregación directa al DB
         long totalSolicitudes = solicitudRepository.count();
@@ -475,9 +516,7 @@ public class CreditoService {
         return reporte;
     }
     
-    /**
-     * Genera un reporte básico de usuarios (simulación).
-     */
+ 
     public Map<String, Object> generarReporteUsuarios() {
         long totalUsuarios = usuarioRepository.count();
         // Simular conteo de usuarios con créditos activos
@@ -495,9 +534,6 @@ public class CreditoService {
         return reporte;
     }
     
-    /**
-     * Proporciona estadísticas generales del dashboard (simulación).
-     */
     public Map<String, Object> obtenerEstadisticasGenerales() {
         long totalCreditos = creditoRepository.count();
         long creditosActivos = creditoRepository.findByEstado("activo").size();
@@ -514,13 +550,7 @@ public class CreditoService {
         
         return estadisticas;
     }
-
-    // ============================================
-    // GESTIÓN DE EVIDENCIAS DE CULTIVO (Se mantiene)
-    // ============================================
-
     public Credito subirEvidenciaCultivo(SubirEvidenciaCultivoDTO dto) {
-        // Lógica para subir evidencia (mantenida de la respuesta anterior)
         Credito credito = creditoRepository.findById(dto.getIdCredito())
                 .orElseThrow(() -> new RuntimeException("Crédito no encontrado"));
         

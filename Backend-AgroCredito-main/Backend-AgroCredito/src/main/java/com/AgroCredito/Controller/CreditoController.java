@@ -1,5 +1,6 @@
 package com.AgroCredito.Controller;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -9,15 +10,18 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.AgroCredito.Dto.Request.AprobarSolicitudDTO;
 import com.AgroCredito.Dto.Request.CambiarEstadoCreditoDTO;
+import com.AgroCredito.Dto.Request.ConfirmarPagoAdminDTO;
 import com.AgroCredito.Dto.Request.EvaluarSolicitudDTO;
 import com.AgroCredito.Dto.Request.PlanPago;
+import com.AgroCredito.Dto.Request.RechazarPagoAdminDTO;
 import com.AgroCredito.Dto.Request.RechazarSolicitudDTO;
 import com.AgroCredito.Dto.Request.RegistrarPagoDTO;
+import com.AgroCredito.Dto.Request.SubirComprobanteDTO;
 import com.AgroCredito.Model.Credito;
 import com.AgroCredito.Model.Credito.HistorialPago;
 import com.AgroCredito.Model.Solicitudes_Credito;
@@ -33,8 +37,6 @@ public class CreditoController {
     @Autowired
     private CreditoService creditoService;
 
-    // Se asume el uso de UserDetails para obtener el nombre de usuario (correo)
-
     // ============================================
     // 3. EVALUACIÓN Y APROBACIÓN (Administradores)
     // Rutas: /api/admin/solicitudes...
@@ -43,7 +45,7 @@ public class CreditoController {
     /**
      * GET /api/admin/solicitudes - Listar todas las solicitudes con filtros
      */
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('administrador')")
     @GetMapping("/admin/solicitudes")
     public ResponseEntity<List<Solicitudes_Credito>> listarSolicitudesConFiltros(
             @RequestParam(required = false) String estado,
@@ -57,7 +59,7 @@ public class CreditoController {
     /**
      * GET /api/admin/solicitudes/pendientes - Solicitudes pendientes de revisión
      */
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('administrador')")
     @GetMapping("/admin/solicitudes/pendientes")
     public ResponseEntity<List<Solicitudes_Credito>> listarSolicitudesPendientes() {
         return ResponseEntity.ok(creditoService.listarSolicitudesPendientes());
@@ -66,15 +68,15 @@ public class CreditoController {
     /**
      * PUT /api/admin/solicitudes/{id}/evaluar - Evaluar solicitud
      */
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('administrador')")
     @PutMapping("/admin/solicitudes/{id}/evaluar")
     public ResponseEntity<Solicitudes_Credito> evaluarSolicitud(
             @PathVariable("id") String idSolicitud,
             @Valid @RequestBody EvaluarSolicitudDTO dto,
-            @AuthenticationPrincipal UserDetails userDetails) {
+            @AuthenticationPrincipal String email) { // CORREGIDO: Usar String email
         
         Solicitudes_Credito solicitudActualizada = creditoService.evaluarSolicitud(
-            idSolicitud, dto, userDetails.getUsername()
+            idSolicitud, dto, email // CORREGIDO: Pasar 'email'
         );
         return ResponseEntity.ok(solicitudActualizada);
     }
@@ -82,15 +84,14 @@ public class CreditoController {
     /**
      * PUT /api/admin/solicitudes/{id}/aprobar - Aprobar solicitud y crear crédito
      */
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('administrador')")
     @PutMapping("/admin/solicitudes/{id}/aprobar")
     public ResponseEntity<Credito> aprobarSolicitud(
             @PathVariable("id") String idSolicitud,
             @Valid @RequestBody AprobarSolicitudDTO dto,
-            @AuthenticationPrincipal UserDetails userDetails) {
-        
+            @AuthenticationPrincipal String email) {
         Credito nuevoCredito = creditoService.aprobarSolicitud(
-            idSolicitud, dto, userDetails.getUsername()
+            idSolicitud, dto, email 
         );
         return new ResponseEntity<>(nuevoCredito, HttpStatus.CREATED);
     }
@@ -98,15 +99,15 @@ public class CreditoController {
     /**
      * PUT /api/admin/solicitudes/{id}/rechazar - Rechazar solicitud
      */
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('administrador')")
     @PutMapping("/admin/solicitudes/{id}/rechazar")
     public ResponseEntity<Solicitudes_Credito> rechazarSolicitud(
             @PathVariable("id") String idSolicitud,
             @Valid @RequestBody RechazarSolicitudDTO dto,
-            @AuthenticationPrincipal UserDetails userDetails) {
+            @AuthenticationPrincipal String email) { // CORREGIDO: Usar String email
         
         Solicitudes_Credito solicitudRechazada = creditoService.rechazarSolicitud(
-            idSolicitud, dto, userDetails.getUsername()
+            idSolicitud, dto, email // CORREGIDO: Pasar 'email'
         );
         return ResponseEntity.ok(solicitudRechazada);
     }
@@ -118,7 +119,7 @@ public class CreditoController {
     /**
      * GET /api/admin/reportes/solicitudes - Reporte de solicitudes por estado/fecha
      */
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('administrador')")
     @GetMapping("/admin/reportes/solicitudes")
     public ResponseEntity<?> reporteSolicitudes(
             @RequestParam(required = false) String estado,
@@ -130,7 +131,7 @@ public class CreditoController {
     /**
      * GET /api/admin/reportes/usuarios - Reporte de usuarios registrados
      */
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('administrador')")
     @GetMapping("/admin/reportes/usuarios")
     public ResponseEntity<?> reporteUsuarios() {
         return ResponseEntity.ok(creditoService.generarReporteUsuarios());
@@ -139,7 +140,7 @@ public class CreditoController {
     /**
      * GET /api/admin/estadisticas - Dashboard con estadísticas generales
      */
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('administrador')")
     @GetMapping("/admin/estadisticas")
     public ResponseEntity<?> dashboardEstadisticas() {
         return ResponseEntity.ok(creditoService.obtenerEstadisticasGenerales());
@@ -157,9 +158,9 @@ public class CreditoController {
      */
     @GetMapping("/creditos") 
     public ResponseEntity<List<Credito>> listarCreditosUsuario(
-            @AuthenticationPrincipal UserDetails userDetails) {
+            @AuthenticationPrincipal String email) { // CORREGIDO: Usar String email
         
-        List<Credito> creditos = creditoService.listarCreditosUsuario(userDetails.getUsername());
+        List<Credito> creditos = creditoService.listarCreditosUsuario(email); // CORREGIDO: Pasar 'email'
         return ResponseEntity.ok(creditos);
     }
 
@@ -169,9 +170,9 @@ public class CreditoController {
     @GetMapping("/creditos/{id}")
     public ResponseEntity<Credito> obtenerDetalleCredito(
             @PathVariable("id") String idCredito,
-            @AuthenticationPrincipal UserDetails userDetails) {
+            @AuthenticationPrincipal String email) { // CORREGIDO: Usar String email
         
-        Credito credito = creditoService.obtenerDetalleCredito(idCredito, userDetails.getUsername());
+        Credito credito = creditoService.obtenerDetalleCredito(idCredito, email); // CORREGIDO: Pasar 'email'
         return ResponseEntity.ok(credito);
     }
 
@@ -180,9 +181,9 @@ public class CreditoController {
      */
     @GetMapping("/creditos/activos")
     public ResponseEntity<List<Credito>> obtenerCreditosActivos(
-            @AuthenticationPrincipal UserDetails userDetails) {
+            @AuthenticationPrincipal String email) { // CORREGIDO: Usar String email
         
-        List<Credito> activos = creditoService.listarCreditosActivosUsuario(userDetails.getUsername());
+        List<Credito> activos = creditoService.listarCreditosActivosUsuario(email); // CORREGIDO: Pasar 'email'
         return ResponseEntity.ok(activos);
     }
     
@@ -199,7 +200,7 @@ public class CreditoController {
     /**
      * GET /api/admin/creditos - Listar todos los créditos (admin)
      */
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('administrador')")
     @GetMapping("/admin/creditos")
     public ResponseEntity<List<Credito>> listarTodosCreditos(
             @RequestParam(required = false) String estado,
@@ -212,7 +213,7 @@ public class CreditoController {
     /**
      * PUT /api/admin/creditos/{id}/estado - Cambiar estado del crédito (admin)
      */
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('administrador')")
     @PutMapping("/admin/creditos/{id}/estado")
     public ResponseEntity<Credito> cambiarEstadoCredito(
             @PathVariable("id") String idCredito,
@@ -222,36 +223,28 @@ public class CreditoController {
         return ResponseEntity.ok(creditoActualizado);
     }
     
-    // ============================================
-    // 5. PAGOS
-    // Rutas: /api/pagos... y /api/admin/pagos...
-    // ============================================
 
-    // REGISTRO Y CONSULTA DE PAGOS (Usuario)
-    
-    /**
-     * POST /api/pagos - Registrar un nuevo pago (inicialmente pendiente)
-     */
-    @PostMapping("/pagos")
+    @PostMapping(value = "/pagos", consumes = "multipart/form-data")
     @ResponseStatus(HttpStatus.CREATED)
     public ResponseEntity<Credito> registrarPago(
-            @Valid @RequestBody RegistrarPagoDTO dto, 
-            @AuthenticationPrincipal UserDetails userDetails) {
-        
-        Credito credito = creditoService.registrarPago(dto, userDetails.getUsername());
+            @Valid @RequestPart("datosPago") RegistrarPagoDTO dto, 
+            @RequestPart("comprobante") MultipartFile comprobante,
+            @AuthenticationPrincipal String email) throws IOException {
+
+        Credito credito = creditoService.registrarPagoConComprobante(dto, comprobante, email);
         return ResponseEntity.status(HttpStatus.CREATED).body(credito);
     }
-    
+
     /**
      * GET /api/pagos/:idCredito - Obtener historial de pagos de un crédito
      */
     @GetMapping("/pagos/{idCredito}")
     public ResponseEntity<List<HistorialPago>> obtenerHistorialPagos(
             @PathVariable("idCredito") String idCredito, 
-            @AuthenticationPrincipal UserDetails userDetails) {
+            @AuthenticationPrincipal String email) { // CORREGIDO: Usar String email
         
         // Se asume que el servicio valida que el crédito sea del usuario autenticado
-        return ResponseEntity.ok(creditoService.obtenerHistorialPagos(idCredito, userDetails.getUsername()));
+        return ResponseEntity.ok(creditoService.obtenerHistorialPagos(idCredito, email)); // CORREGIDO: Pasar 'email'
     }
 
     /**
@@ -261,24 +254,27 @@ public class CreditoController {
     public ResponseEntity<HistorialPago> obtenerDetallePago(
             @PathVariable("idCredito") String idCredito,
             @PathVariable("idPago") String idPago,
-            @AuthenticationPrincipal UserDetails userDetails) {
+            @AuthenticationPrincipal String email) { // CORREGIDO: Usar String email
         
         // Se asume que el servicio valida que el crédito sea del usuario autenticado
-        return ResponseEntity.ok(creditoService.obtenerDetallePago(idCredito, idPago, userDetails.getUsername()));
+        return ResponseEntity.ok(creditoService.obtenerDetallePago(idCredito, idPago, email)); // CORREGIDO: Pasar 'email'
     }
 
     /**
      * PUT /api/pagos/:idCredito/:idPago/comprobante - Actualizar comprobante de pago
      * NOTA: El path debe incluir idCredito porque el pago está incrustado en Credito.
      */
-    @PutMapping("/pagos/{idCredito}/{idPago}/comprobante")
+    
+    @PutMapping(value = "/pagos/{idCredito}/{idPago}/comprobante", consumes = "multipart/form-data")
     public ResponseEntity<Credito> actualizarComprobante(
             @PathVariable("idCredito") String idCredito,
             @PathVariable("idPago") String idPago,
-            @Valid @RequestBody SubirComprobanteDTO dto) {
-        
-        // La validación de pertenencia se delega al servicio o se realiza con PreAuthorize
-        Credito credito = creditoService.actualizarComprobante(idCredito, idPago, dto);
+            // Eliminamos el @RequestBody que causa el error y usamos MultipartFile
+            @RequestPart("comprobante") MultipartFile comprobante, 
+            @AuthenticationPrincipal String email) throws IOException { // Añadir 'throws IOException'
+
+        // Corregido: Pasamos el archivo y el email al servicio
+        Credito credito = creditoService.actualizarComprobante(idCredito, idPago, comprobante, email);
         return ResponseEntity.ok(credito);
     }
 
@@ -288,7 +284,7 @@ public class CreditoController {
      * PUT /api/admin/pagos/{idPago}/confirmar - Confirmar pago (admin)
      * NOTA: idCredito se requiere en el body para buscar el pago incrustado.
      */
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('administrador')")
     @PutMapping("/admin/pagos/{idPago}/confirmar")
     public ResponseEntity<Credito> confirmarPago(
             @PathVariable("idPago") String idPago,
@@ -302,7 +298,7 @@ public class CreditoController {
      * PUT /api/admin/pagos/{idPago}/rechazar - Rechazar pago (admin)
      * NOTA: idCredito y motivo se requieren en el body.
      */
-    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('administrador')")
     @PutMapping("/admin/pagos/{idPago}/rechazar")
     public ResponseEntity<Credito> rechazarPago(
             @PathVariable("idPago") String idPago,
@@ -312,3 +308,4 @@ public class CreditoController {
         return ResponseEntity.ok(credito);
     }
 }
+

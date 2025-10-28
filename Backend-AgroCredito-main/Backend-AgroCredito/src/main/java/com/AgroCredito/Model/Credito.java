@@ -4,6 +4,10 @@ import lombok.Data;
 import org.springframework.data.annotation.Id;
 import org.springframework.data.mongodb.core.mapping.Document;
 import org.springframework.data.mongodb.core.mapping.Field;
+
+import com.AgroCredito.Model.Solicitudes_Credito.ProyectoProductivo.ImagenReferencia;
+import com.AgroCredito.Model.Usuario.Ubicacion.Coordenadas;
+
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Date;
@@ -100,6 +104,13 @@ public class Credito {
         private String departamento;
         private String municipio;
         private String vereda;
+        private Coordenadas coordenadas;
+        
+        @Data
+        public static class Coordenadas {
+            private Double lat;
+            private Double lng;
+        }
     }
     
     /**
@@ -133,11 +144,34 @@ public class Credito {
      */
     @Data
     public static class ProyectoProductivoResumen {
-        private String nombre;
+    	private String nombre;
         private String descripcion;
+        
+        @Field("costo_estimado")
+        private Double costoEstimado;
+        
+        @Field("ingresos_estimados")
+        private Double ingresosEstimados;
+        
+        @Field("impacto_comunitario")
+        private String impactoComunitario;
         
         @Field("duracion_meses")
         private Integer duracionMeses;
+        private List<ImagenReferencia> imagenes = new ArrayList<>();
+        
+        @Data
+        public static class ImagenReferencia {
+            @Field("file_id")
+            private String fileId;
+            
+            private String filename;
+            
+            @Field("contentType")
+            private String contentType;
+            
+            private String descripcion;
+        }
     }
     
     /**
@@ -186,6 +220,7 @@ public class Credito {
      */
     @Data
     public static class ComprobanteFile {
+    	
         @Field("file_id")
         private String fileId;
         

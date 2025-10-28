@@ -1,5 +1,8 @@
 package com.AgroCredito.Service;
 
+import com.AgroCredito.Dto.Request.SubirComprobanteDTO;
+import com.AgroCredito.Model.Credito;
+import com.AgroCredito.Model.Solicitudes_Credito;
 import com.mongodb.client.gridfs.model.GridFSFile;
 import lombok.RequiredArgsConstructor;
 import org.bson.types.ObjectId;
@@ -81,5 +84,22 @@ public class GridFSService {
      */
     public boolean archivoExiste(String fileId) {
         return obtenerArchivo(fileId) != null;
+    }
+    
+public SubirComprobanteDTO subirComprobante(MultipartFile file) throws IOException {
+        
+	ObjectId fileId = gridFsTemplate.store(
+            file.getInputStream(),
+            file.getOriginalFilename(),
+            file.getContentType()
+        );
+
+        // 🚨 Crear y retornar SubirComprobanteDTO
+        SubirComprobanteDTO comprobanteMetadata = new SubirComprobanteDTO();
+        comprobanteMetadata.setFileId(fileId.toString());
+        comprobanteMetadata.setFilename(file.getOriginalFilename());
+        comprobanteMetadata.setContentType(file.getContentType());
+        
+        return comprobanteMetadata;
     }
 }
